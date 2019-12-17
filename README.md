@@ -2,4 +2,4 @@
 6D pose data collecting tool with ArUco marker
 
 ## UI
-!["UI"](screenshot/Screenshot from 2019-12-17 23-09-47.png)
+<img src="./screenshot/screenshot.jpg" width="80%" height="80%">
