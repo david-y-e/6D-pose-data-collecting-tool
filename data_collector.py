@@ -31,6 +31,7 @@ class COLLECTOR_UI(QDialog):
 		self.bridge = CvBridge()
 		self.config = config
 		self.objects = config['COLLECTOR_CONFIG']['CLASSES']
+		
 
 		num_objects = len(self.objects)
 
@@ -562,7 +563,8 @@ class COLLECTOR_UI(QDialog):
 					self.Progress.setValue(0)
 					self.bottom_save.append(pts_tmp)
 					self.rgb_save.append(tmp_rgb)
-					self.depth_save.append(self.depth_origin)
+					if self.config['COLLECTOR_CONFIG']['SAVE_DEPTH']:
+						self.depth_save.append(self.depth_origin)
 					self.rotation_save.append(rotation_matrix)
 					self.translation_save.append(translation_matrix)
 					ori_img = cv2.cvtColor(ori_img, cv2.COLOR_RGB2BGR)
