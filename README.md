@@ -48,6 +48,7 @@
 python data_collector.py
 ```
 3. Collect data by following the video below.
+
 [![How to Use](http://img.youtube.com/vi/6bgV5Z1S6Fs/0.jpg)](https://youtu.be/6bgV5Z1S6Fs?t=0s)
 
 4. Run data_generator.py
