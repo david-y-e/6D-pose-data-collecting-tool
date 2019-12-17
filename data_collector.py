@@ -8,33 +8,29 @@ from PyQt5.QtCore import *
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.uic import loadUi
-import roslib
 from math import pi, atan, tan, sin, cos, sqrt
 from math import degrees as deg
 from math import radians as rad
 import rospy
 import os
 from sensor_msgs.msg import Image
-from std_msgs.msg import String
 from geometry_msgs.msg import TransformStamped 
-# from robotiq_85_msgs.msg import GripperCmd, GripperStat
-# import urx
 from MeshPly import MeshPly
 import PyKDL
 from pytless import inout,renderer
+import json
 
-class UR5_UI(QDialog):
+class COLLECTOR_UI(QDialog):
 
-	def __init__(self):
-		super(UR5_UI,self).__init__()
-		loadUi('UR_Robot_image_collector.ui',self)
+	def __init__(self, config):
+		super(COLLECTOR_UI,self).__init__()
+		loadUi('data_collector.ui',self)
 
-		self.setWindowTitle('UR5_UI')
+		self.setWindowTitle('COLLECTOR_UI')
 
 		self.bridge = CvBridge()
-
-
-		self.objects = ['BC']
+		self.config = config
+		self.objects = config['COLLECTOR_CONFIG']['CLASSES']
 
 		num_objects = len(self.objects)
 
@@ -44,13 +40,13 @@ class UR5_UI(QDialog):
 			self.Object_List.addItem(self.objects[i])
 
 
-		self.save_path = "/home/david/test"
+		self.save_path = config['COLLECTOR_CONFIG']['SAVE_PATH']
 
 		self.corners3D_list = []
 		self.model_list = []
 
 		for i in range(num_objects):
-			meshname  = "/home/david/Downloads/singleshotpose-master/real-time_detection/models/%s.ply"%self.objects[i]
+			meshname  = "%s/%s.ply"%(config['COLLECTOR_CONFIG']['MODEL_PATH'], self.objects[i])
 			mesh               = MeshPly(meshname) 
 			vertices           = np.c_[np.array(mesh.vertices), np.ones((len(mesh.vertices), 1))].transpose()
 			vertices = vertices* 1000.0
@@ -61,9 +57,7 @@ class UR5_UI(QDialog):
 			model['pts'] = model['pts']*1000.0
 			self.model_list.append(model)
 
-		self.cylinder_model = self.model_list[0]
-
-		self.internal_calibration = self.get_camera_intrinsic()
+		self.internal_calibration = self.get_camera_intrinsic(config)
 
 		self.capture_trigger = False
 		self.cal_working = False
@@ -76,12 +70,9 @@ class UR5_UI(QDialog):
 		self.inspection_save = []
 		self.proj_2d_gt_save = []
 		self.save_count = 0
-		self.tmp_idx = 0
-
 
 		self.progressing = False
 
-		self.image_size = [640, 480]
 		self.trans_x = [0] * num_objects
 		self.trans_y = [0] * num_objects
 		self.trans_z = [0] * num_objects
@@ -103,14 +94,11 @@ class UR5_UI(QDialog):
 		self.rotation_matrix_list = [zero_rotations] * num_objects
 		self.proj_2d_gt_list = [zero_proj_2d] * num_objects
 		self.bottom_list = [self.bottom_index] * num_objects
-		# self.group
 
-
-		rospy.Subscriber("/camera/color/image_raw", Image, self.callback_rgb)
+		rospy.Subscriber("%s"%config['COLLECTOR_CONFIG']['CAMERA_TOPIC'], Image, self.callback_rgb)
+		rospy.Subscriber("%s"%config['COLLECTOR_CONFIG']['DEPTH_TOPIC'], Image, self.callback_depth)
 		rospy.Subscriber("/simple_aruco_detector/transforms", TransformStamped, self.callback_april)
-		# rospy.Subscriber("/camera/aligned_depth_to_color/image_raw", Image, self.callback_depth)
 
-		# self.result = Result()
 		self.frame = None
 		self.frame_result = None
 
@@ -119,13 +107,10 @@ class UR5_UI(QDialog):
 		self.activated_items = []
 		self.color_items = []
 
-
 		############ Button Connection ############
 		self.Streaming_Start_Btn.clicked.connect(self.start)
-		self.Pose1_Btn.clicked.connect(self.pose1)
-		self.Home_Btn.clicked.connect(self.home)
-		self.Grasp_Btn.clicked.connect(self.grasp)
-		self.Bottom_Changer.clicked.connect(self.bottom_changer)
+		self.Render_Btn.clicked.connect(self.tmp_render)
+		self.Capture_Btn.clicked.connect(self.capture)
 
 		self.Orien_roll_down.clicked.connect(lambda:self.change_button('roll_down'))
 		self.Orien_roll_up.clicked.connect(lambda:self.change_button('roll_up'))
@@ -147,7 +132,6 @@ class UR5_UI(QDialog):
 
 		###########################################
 
-
 		self.Object_List.itemClicked.connect(self.Select_item_objlist)
 		self.Object_List_Activated.itemClicked.connect(self.Select_item_actlist)
 		self.Activate.clicked.connect(self.Activate_item)
@@ -155,36 +139,10 @@ class UR5_UI(QDialog):
 
 		self.Class_Selector.currentIndexChanged.connect(self.select_class)
 
-
 		self.marker_trans = []
 		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
-		self.marker_trans.append((0,0,0))
 
 
-	def home(self):
-		self.tmp_idx += 1
-		print("home")
-		# self.tra = self.X + 10
-
-	def bottom_changer(self):
-		if self.handling_item != None:
-			index = self.handling_item
-			self.bottom_index[index] += 1
 
 	def select_class(self):
 		self.handling_item = self.objects.index(self.Class_Selector.currentText())
@@ -257,10 +215,9 @@ class UR5_UI(QDialog):
 				self.Status_yaw.setText("%i"%int(float(self.orien_y[self.handling_item])*180/pi))
 
 
-
 	def render(self, rgb, model, R, t, cad=False):
 		if cad:
-			K = self.get_camera_intrinsic()
+			K = self.internal_calibration
 			surf_color = (1,1,1)
 			im_size = (rgb.shape[1],rgb.shape[0])
 			ren_rgb = renderer.render(model, im_size, K, R, t,
@@ -268,13 +225,11 @@ class UR5_UI(QDialog):
 			ren_gray = cv2.cvtColor(ren_rgb, cv2.COLOR_RGB2GRAY)
 			mask = np.zeros((ren_gray.shape[0], ren_gray.shape[1]))
 			mask[ren_gray!=0]=255
-			# mask[ren_gray!=255]=255
-			# cv2.imwrite("/home/david/test.png",mask)
 			
 			vis_rgb = ren_rgb.astype(np.float)
 			vis_rgb = vis_rgb.astype(np.uint8)
 		else:
-			K = self.get_camera_intrinsic()
+			K = self.internal_calibration
 			surf_color = (1,0,0)
 			im_size = (rgb.shape[1],rgb.shape[0])
 			ren_rgb = renderer.render(model, im_size, K, R, t,
@@ -282,8 +237,6 @@ class UR5_UI(QDialog):
 			ren_gray = cv2.cvtColor(ren_rgb, cv2.COLOR_RGB2GRAY)
 			mask = np.zeros((ren_gray.shape[0], ren_gray.shape[1]))
 			mask[ren_gray!=0]=255
-			# mask[ren_gray!=255]=255
-			# cv2.imwrite("/home/david/test.png",mask)
 			
 			vis_rgb = 0.4 * rgb.astype(np.float) + 0.6 * ren_rgb.astype(np.float)
 			vis_rgb = vis_rgb.astype(np.uint8)
@@ -298,26 +251,16 @@ class UR5_UI(QDialog):
 		for i in range(3):
 			for j in range(3):
 				rotation_matrix[i,j] = rotation_vec[i,j]
-
-		# translation_matrix[0,0] = translation2.x * 1000
-		# translation_matrix[1,0] = translation2.y * 1000
-		# translation_matrix[2,0] = translation2.z * 1000
 		
 		return rotation_matrix
 
 
 	def Quaternion2RPY(self, Quaternion, translation, original_index):
-		marker_index = 0
-		
+		marker_index = 0		
 
 		rotation_vec = PyKDL.Rotation.Quaternion(Quaternion.x,Quaternion.y,Quaternion.z,Quaternion.w)
 		
-		# rotation_vec = rotation_vec.Inverse()
 		rotation_add = PyKDL.Rotation.EulerZYX(self.orien_r[original_index], self.orien_p[original_index], self.orien_y[original_index])
-		# rotation_add = rotation_add.Inverse()
-
-		# rotation_add = rotation_add.Inverse()
-
 		rotation_matrix = np.zeros((3,3))
 
 		for i in range(3):
@@ -325,17 +268,13 @@ class UR5_UI(QDialog):
 				rotation_matrix[i,j] = rotation_vec[i,j]
 
 		rotation_matrix_add = np.zeros((3,3))
-
 		for i in range(3):
 			for j in range(3):
 				rotation_matrix_add[i,j] = rotation_add[i,j]
-
 		
 		rotation_matrix_new = np.matmul(rotation_matrix, rotation_matrix_add)
 
-
 		R_tmp = []
-
 		for i in range(3):
 			for j in range(3):
 				R_tmp.append(rotation_matrix_new[i][j])
@@ -367,25 +306,23 @@ class UR5_UI(QDialog):
 		translation_matrix_new[2,0] = new_translation[2]
 
 		return translation_matrix_new, rotation_matrix_new, rotation_rpy, rotation_zyx
-
 		
 
-	def pose1(self):
+	def tmp_render(self):
 		if self.handling_item != None:
 			original_index = self.handling_item
 			rgb, mask = self.render(self.frame_rgb, self.model_list[original_index], self.rotation_matrix_list[original_index], self.translation_matrix_list[original_index])
 			self.preview_monitor(rgb)
 		# self.Progress.setValue(10)
 
-	def grasp(self):
+	def capture(self):
 		if self.capture_trigger == False:
 			self.capture_trigger = True
 			self.capture_count = 0
 		elif self.capture_trigger == True:
 			self.capture_trigger = 'save'
 		else:
-			self.capture_trigger = False
-		
+			self.capture_trigger = False		
 
 
 	def callback_result(self,data):
@@ -407,12 +344,11 @@ class UR5_UI(QDialog):
 			print(e)
 
 
-	def get_camera_intrinsic(self):
+	def get_camera_intrinsic(self, config):
+		camera_parameters = config['COLLECTOR_CONFIG']['CAMERA_INTRINSIC']
 		K = np.zeros((3, 3), dtype='float64')
-		# K[0, 0], K[0, 2] = 528.2528340378916, 317.6973305122578
-		# K[1, 1], K[1, 2] = 529.980463017893, 246.0399589788932
-		K[0, 0], K[0, 2] = 614.14501953125, 314.00128173828125
-		K[1, 1], K[1, 2] = 614.680419921875, 242.40391540527344
+		K[0, 0], K[0, 2] = camera_parameters[0], camera_parameters[2]
+		K[1, 1], K[1, 2] = camera_parameters[4], camera_parameters[5]
 		K[2, 2] = 1.
 		return K
 
@@ -456,85 +392,12 @@ class UR5_UI(QDialog):
 			try:
 				tmp_detection = self.detection
 				ids = []
-				# tmp_full_ids = range(0,12)
 				tmp_rgb = self.frame_rgb.copy()
 				ori_img = self.frame_rgb.copy()
 				tmp_pose = []
-				
-				# for i in range(len(tmp_detection)):
-				# 	ids.append(tmp_detection[i].id[0])
-				# 	# del tmp_full_ids[tmp_full_ids.index(tmp_detection[i].id[0])]
-				# 	pos_x = tmp_detection[i].pose.pose.pose.position.x
-				# 	pos_y = tmp_detection[i].pose.pose.pose.position.y
-				# 	pos_z = tmp_detection[i].pose.pose.pose.position.z
-					
-				# 	distance = pos_z
 
-				# 	tmp_pose.append(distance)
-
-				# center_april = ids[tmp_pose.index(min(tmp_pose))]
-				# print(center_april)
-				# center_april = self.tmp_idx
-				# center_april = self.tmp_idx
 				pose = tmp_detection.transform
-				# if center_april == 0 or center_april == 6:
-				# 	pose1 = tmp_detection[ids.index(3)]
-				# 	pose2 = tmp_detection[ids.index(9)]
 
-				# elif center_april == 1 or center_april == 7:
-				# 	pose1 = tmp_detection[ids.index(4)]
-				# 	pose2 = tmp_detection[ids.index(10)]
-
-				# elif center_april == 2 or center_april == 8:
-				# 	pose1 = tmp_detection[ids.index(5)]
-				# 	pose2 = tmp_detection[ids.index(11)]
-
-				# elif center_april == 3 or center_april == 9:
-				# 	pose1 = tmp_detection[ids.index(6)]
-				# 	pose2 = tmp_detection[ids.index(0)]
-				
-				# elif center_april == 4 or center_april == 10:
-				# 	pose1 = tmp_detection[ids.index(7)]
-				# 	pose2 = tmp_detection[ids.index(1)]
-				
-				# elif center_april == 5 or center_april == 11:
-				# 	pose1 = tmp_detection[ids.index(8)]
-				# 	pose2 = tmp_detection[ids.index(2)]
-
-				# else:
-				# 	self.Video_Streaming_Result.clear()
-				# 	self.Video_Streaming_Result.setText("No detection")
-
-
-				# if (0 in ids and 6 in ids):
-				# 	print(0,6)
-				# 	pose1 = tmp_detection[ids.index(0)]
-				# 	pose2 = tmp_detection[ids.index(6)]
-				# elif (1 in ids and 7 in ids):
-				# 	print(1,7)
-				# 	pose1 = tmp_detection[ids.index(1)]
-				# 	pose2 = tmp_detection[ids.index(7)]
-				# elif (2 in ids and 8 in ids):
-				# 	print(2,8)
-				# 	pose1 = tmp_detection[ids.index(2)]
-				# 	pose2 = tmp_detection[ids.index(8)]
-				# elif (3 in ids and 9 in ids):
-				# 	print(3,9)
-				# 	pose1 = tmp_detection[ids.index(3)]
-				# 	pose2 = tmp_detection[ids.index(9)]
-				# elif (4 in ids and 10 in ids):
-				# 	print(4,10)
-				# 	pose1 = tmp_detection[ids.index(4)]
-				# 	pose2 = tmp_detection[ids.index(10)]
-				# elif (5 in ids and 11 in ids):
-				# 	print(5,11)
-				# 	pose1 = tmp_detection[ids.index(5)]
-				# 	pose2 = tmp_detection[ids.index(11)]
-				# else:
-				# 	self.Video_Streaming_Result.clear()
-				# 	self.Video_Streaming_Result.setText("No detection")
-					# print("No detections")
-				# pose = pose.pose.pose.pose
 				self.translation = pose.translation
 				self.orientation = pose.rotation
 
@@ -544,13 +407,10 @@ class UR5_UI(QDialog):
 						original_index = self.objects.index(self.activated_items[i])
 
 						translation_matrix, rotation_matrix, rotation_RPY, rotation_ZYX = self.Quaternion2RPY(self.orientation, self.translation, original_index)
-						print(rotation_ZYX)
 						bottom_points = self.predict_bottom_points(original_index)
 
-						# rotation_matrix = self.Quaternion2Rotation(self.orientation)
 						self.translation_matrix_list[original_index] = translation_matrix
 						self.rotation_matrix_list[original_index] = rotation_matrix
-
 
 						transformation = np.concatenate((rotation_matrix, translation_matrix), axis=1)
 						
@@ -578,8 +438,6 @@ class UR5_UI(QDialog):
 						pts = np.array(pts)
 						reshaped_pts = pts.reshape((-1, 1, 2))
 
-
-						# cv2.fillPoly(ori_img, [reshaped_pts], (255,0,0))
 						self.bottom_list[original_index] = pts
 
 						x1 = int(proj_2d_gt[0][0])
@@ -685,6 +543,7 @@ class UR5_UI(QDialog):
 						x2 = int(proj_2d_gt[6][0])
 						y2 = int(proj_2d_gt[6][1])
 						cv2.line(ori_img,(x1,y1),(x2,y2),box_3d_color,2)
+
 				self.frame_result = ori_img.copy()
 				self.result_monitor(ori_img)
 
@@ -703,7 +562,7 @@ class UR5_UI(QDialog):
 					self.Progress.setValue(0)
 					self.bottom_save.append(pts_tmp)
 					self.rgb_save.append(tmp_rgb)
-					# self.depth_save.append(self.depth_origin)
+					self.depth_save.append(self.depth_origin)
 					self.rotation_save.append(rotation_matrix)
 					self.translation_save.append(translation_matrix)
 					ori_img = cv2.cvtColor(ori_img, cv2.COLOR_RGB2BGR)
@@ -730,7 +589,7 @@ class UR5_UI(QDialog):
 			self.capture_trigger = False
 
 			self.rgb_save = []
-			# self.depth_save = []
+			self.depth_save = []
 			self.rotation_save = []
 			self.translation_save = []
 			self.inspection_save = []
@@ -792,136 +651,37 @@ class UR5_UI(QDialog):
 
 			if not os.path.isdir("%s/%s/JPEGImages"%(self.save_path,self.objects[original_index])):
 				os.makedirs("%s/%s/JPEGImages"%(self.save_path,self.objects[original_index]))
-			# if not os.path.isdir("%s/%s/mask"%(self.save_path,self.objects[original_index])):
-			# 	os.makedirs("%s/%s/mask"%(self.save_path,self.objects[original_index]))
-			# if not os.path.isdir("%s/%s/labels"%(self.save_path,self.objects[original_index])):
-			# 	os.makedirs("%s/%s/labels"%(self.save_path,self.objects[original_index]))
 			if not os.path.isdir("%s/%s/inspection"%(self.save_path,self.objects[original_index])):
 				os.makedirs("%s/%s/inspection"%(self.save_path,self.objects[original_index]))
-			# if not os.path.isdir("%s/%s/changed_img"%(self.save_path,self.objects[original_index])):
-			# 	os.makedirs("%s/%s/changed_img"%(self.save_path,self.objects[original_index]))
 			if not os.path.isdir("%s/%s/rotation"%(self.save_path,self.objects[original_index])):
 				os.makedirs("%s/%s/rotation"%(self.save_path,self.objects[original_index]))
 			if not os.path.isdir("%s/%s/translation"%(self.save_path,self.objects[original_index])):
 				os.makedirs("%s/%s/translation"%(self.save_path,self.objects[original_index]))
-			# if not os.path.isdir("%s/%s/depth"%(self.save_path,self.objects[original_index])):
-			# 	os.makedirs("%s/%s/depth"%(self.save_path,self.objects[original_index]))
+			if not os.path.isdir("%s/%s/depth"%(self.save_path,self.objects[original_index])) and self.config['COLLECTOR_CONFIG']['SAVE_DEPTH']:
+				os.makedirs("%s/%s/depth"%(self.save_path,self.objects[original_index]))
 
 			tmp_bgr = cv2.cvtColor(self.rgb_save[count], cv2.COLOR_RGB2BGR)
 
 			cv2.imwrite("%s/%s/JPEGImages/%.6i.png"%(self.save_path,self.objects[original_index],self.save_count),tmp_bgr)
-			# cv2.imwrite("%s/%s/mask/%.4i.png"%(self.save_path,self.objects[original_index],self.save_count),mask)
 			cv2.imwrite("%s/%s/inspection/ins%i.png"%(self.save_path,self.objects[original_index],self.save_count), self.inspection_save[count])
-			# cv2.imwrite("%s/%s/changed_img/%.6i.png"%(self.save_path,self.objects[original_index],self.save_count), result_dummy)
 
 			np.save("%s/%s/rotation/%.6i.npy"%(self.save_path,self.objects[original_index],self.save_count), self.rotation_save[count][index])
 			np.save("%s/%s/translation/%.6i.npy"%(self.save_path,self.objects[original_index],self.save_count), self.translation_save[count][index])
-			# np.save("%s/%s/depth/%.6i.npy"%(self.save_path,self.objects[original_index],self.save_count), self.depth_save[count])
-
-			# result, mask = self.render(self.rgb_save[count], self.model_list[original_index], self.rotation_save[count][index], self.translation_save[count][index], cad=True)
-			# mask_nonzero = np.nonzero(mask)
-
-			# y_length = np.max(mask_nonzero[0]) - np.min(mask_nonzero[0])
-			# x_length = np.max(mask_nonzero[1]) - np.min(mask_nonzero[1])
-
-			# y_center = (np.max(mask_nonzero[0]) + np.min(mask_nonzero[0]))/2
-			# x_center = (np.max(mask_nonzero[1]) + np.min(mask_nonzero[1]))/2
-
-			# if y_length > x_length:
-			# 	ymin = y_center - y_length/2 - 50	
-			# 	ymax = y_center + y_length/2 + 50
-			# 	xmin = x_center - y_length/2 - 50
-			# 	xmax = x_center + y_length/2 + 50
-			# else:
-			# 	ymin = y_center - x_length/2 - 50
-			# 	ymax = y_center + x_length/2 + 50
-			# 	xmin = x_center - x_length/2 - 50
-			# 	xmax = x_center + x_length/2 + 50
-
-			# ymin_save = ymin
-			# xmin_save = xmin
-
-			# result = result[ymin:ymax, xmin:xmax]
-			# mask = mask[ymin:ymax, xmin:xmax]
-
-
-			# tmp_bgr = cv2.cvtColor(self.rgb_save[count], cv2.COLOR_RGB2GRAY)
-			# tmp_bgr = tmp_bgr[ymin:ymax, xmin:xmax]
-
-			# if original_index in self.cylinder:
-			# 	result_dummy, mask_dummy = self.render(self.rgb_save[count], self.cylinder_model, self.rotation_save[count][index], self.translation_save[count][index], cad=True)
-			# mask_nonzero = np.nonzero(mask_dummy)
-			# y_length = np.max(mask_nonzero[0]) - np.min(mask_nonzero[0])
-			# x_length = np.max(mask_nonzero[1]) - np.min(mask_nonzero[1])
-
-			# y_center = (np.max(mask_nonzero[0]) + np.min(mask_nonzero[0]))/2
-			# x_center = (np.max(mask_nonzero[1]) + np.min(mask_nonzero[1]))/2
-
-			# if y_length > x_length:
-			# 	ymin = y_center - y_length/2 - 50	
-			# 	ymax = y_center + y_length/2 + 50
-			# 	xmin = x_center - y_length/2 - 50
-			# 	xmax = x_center + y_length/2 + 50
-			# else:
-			# 	ymin = y_center - x_length/2 - 50
-			# 	ymax = y_center + x_length/2 + 50
-			# 	xmin = x_center - x_length/2 - 50
-			# 	xmax = x_center + x_length/2 + 50
-
-			# result_dummy = result_dummy[ymin:ymax, xmin:xmax]
-
-			# cv2.imwrite("%s/%s/JPEGImages/%.6i.png"%(self.save_path,self.objects[original_index],self.save_count),tmp_bgr)
-			# cv2.imwrite("%s/%s/mask/%.4i.png"%(self.save_path,self.objects[original_index],self.save_count),mask)
-			# cv2.imwrite("%s/%s/inspection/ins%i.png"%(self.save_path,self.objects[original_index],self.save_count), self.inspection_save[count])
-			# cv2.imwrite("%s/%s/changed_img/%.6i.png"%(self.save_path,self.objects[original_index],self.save_count), result_dummy)
 			
-			
+			if self.config['COLLECTOR_CONFIG']['SAVE_DEPTH']:
+				np.save("%s/%s/depth/%.6i.npy"%(self.save_path,self.objects[original_index],self.save_count), self.depth_save[count])
 
-			# proj_2d_gt = self.proj_2d_gt_save[count][index]
-			# keypoint_list = []
-
-			# for i in range(8):
-			# 	for j in range(2):
-			# 		if j%2 == 0:
-			# 			tmp = proj_2d_gt[i][j] / self.image_size[0]
-			# 			keypoint_list.append(tmp)
-			# 		else:
-			# 			tmp = proj_2d_gt[i][j] / self.image_size[1]
-			# 			keypoint_list.append(tmp)
-						
-			# y_list, x_list = mask.nonzero()
-			# x_min, x_max = x_list.min(), x_list.max()
-			# y_min, y_max = y_list.min(), y_list.max()
-			# center_x = (x_min + x_max) / 2
-			# center_y = (y_min + y_max) / 2
-			# width = x_max - x_min
-			# height = y_max - y_min
-
-
-			# width = width / float(self.image_size[0])
-			# center_x = center_x / float(self.image_size[0])
-			# height = height / float(self.image_size[1])
-			# center_y = center_y / float(self.image_size[1])
-			# class_id = 0
-
-			# pts = self.bottom_save[count][index]
-
-			# f = open("%s/%s/labels/%.6i.txt"%(self.save_path,self.objects[original_index],self.save_count),'w')
-			# f.write("%i %i %i %i %i %i %i %i"%(pts[0][0],pts[0][1],pts[1][0],pts[1][1],pts[2][0],pts[2][1],pts[3][0],pts[3][1]))
-			# f.close()
-
-			# result_image = cv2.cvtColor(self.inspection_save[count],cv2.COLOR_BGR2RGB)
-			# self.result_monitor(result_image)
-			# rospy.sleep(0.1)
 		self.save_count += 1
 
 
 def main(args):
-	rospy.init_node('UR5_UI', anonymous=True)
+	rospy.init_node('COLLECTOR_UI', anonymous=True)
 
 if __name__=='__main__':
 	main(sys.argv)
 	app = QApplication(sys.argv)
-	widget = UR5_UI()
+	config_file = open("config.json",'r')
+	config = json.load(config_file)
+	widget = COLLECTOR_UI(config)
 	widget.show()
 	sys.exit(app.exec_())

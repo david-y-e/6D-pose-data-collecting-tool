@@ -1,0 +1,19 @@
+{
+  "COLLECTOR_CONFIG": {
+    "CAMERA_TOPIC": "/camera/color/image_raw",
+    "DEPTH_TOPIC": "/camera/aligned_depth_to_color/image_raw",
+    "CLASSES": ["BC"],
+    "CAMERA_INTRINSIC": [617.5997924804688, 0.0, 323.2143859863281, 0.0, 617.9165649414062, 238.67034912109375, 0.0, 0.0, 1.0],
+    "SAVE_PATH": "tmp_data",
+    "MODEL_PATH": "models",
+    "SAVE_DEPTH": true
+  },
+
+  "GENERATOR_CONFIG": {    
+    "CLASSES": ["BC"],
+    "CAMERA_INTRINSIC": [617.5997924804688, 0.0, 323.2143859863281, 0.0, 617.9165649414062, 238.67034912109375, 0.0, 0.0, 1.0],
+    "DATA_PATH": "tmp_data_example",    
+    "SAVE_PATH": "dataset",
+    "MODEL_PATH": "models"
+  }
+}
