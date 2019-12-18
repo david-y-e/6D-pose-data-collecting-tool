@@ -34,7 +34,8 @@
      
 ## Note
 * This tool requires an aruco detection topic. Go to the link below and build the node in your ROS environment.
- * https://github.com/vprooks/simple_aruco_detector
+  * https://github.com/vprooks/simple_aruco_detector
+  * Set the correct marker size in aruco detection node!!
 * CAD files of objects must be saved with a **ply** extension (in meters).
 * CAD file name and the class name should be the same.
 * Camera parameters must be set.
